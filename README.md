@@ -91,7 +91,7 @@ A plataforma está dividida em duas camadas principais:
 
 ### 1. Login
 
-![Login da plataforma](./imagemreadme/01-login-familia.png)
+![Login da plataforma](./imagemreadme/loginfamilia.png)
 
 **Figura 2 — Página de login da plataforma.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
@@ -112,21 +112,21 @@ A plataforma está dividida em duas camadas principais:
 
 ### 4. Livros e requisições
 
-![Área de livros e requisições](./imagemreadme/04-livros-requisicoes-familia.png)
+![Área de livros e requisições](./imagemreadme/livrosrequisicoaesfamilia.png)
 
 **Figura 5 — Área de consulta e requisição de livros para utilização familiar.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 5. Carrinho / pedidos
 
-![Carrinho da família](./imagemreadme/05-carrinho-familia.png)
+![Carrinho da família](./imagemreadme/carinhofamilia.png)
 
 **Figura 6 — Fluxo de carrinho e pedidos associado à experiência do utilizador.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 6. Notificações
 
-![Notificações da família](./imagemreadme/06-notificacoes-familia.png)
+![Notificações da família](./imagemreadme/notficaçõesfamilia.png)
 
 **Figura 7 — Área de notificações para acompanhamento de ações e eventos do sistema.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
