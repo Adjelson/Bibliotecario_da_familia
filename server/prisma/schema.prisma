@@ -1,0 +1,526 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PAI
+  BIBLIOTECARIO
+  ADMIN
+}
+
+enum ConsultaStatus {
+  MARCADA
+  RECUSADA
+  RETORNADA
+  CONCLUIDA
+  CANCELADA
+}
+
+enum RequisicaoStatus {
+  PENDENTE
+  APROVADA
+  SAIU_PARA_ENTREGA
+  ENTREGUE
+  DEVOLVIDA
+  NEGADA
+}
+
+enum PagamentoStatus {
+  PENDENTE
+  PAGO
+  FALHOU
+}
+
+enum EntregaTipo {
+  domicilio
+  biblioteca
+}
+
+enum TipoAquisicao {
+  compra
+  emprestimo
+}
+
+enum PedidoStatus {
+  PAGAMENTO_PENDENTE
+  PAGO
+  PAGAMENTO_FALHOU
+  APROVADO
+  ENVIADO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum PagamentoMetodo {
+  CARTAO
+  BISTP
+  DINHEIRO
+}
+
+enum PagamentoEstado {
+  PROCESSANDO
+  PAGO
+  FALHOU
+}
+
+enum EntregaStatusItem {
+  em_transito
+  entregue
+  cancelado
+}
+
+/* ============================ Núcleo ============================ */
+
+model Biblioteca {
+  id    Int     @id @default(autoincrement())
+  nome  String  @unique
+  local String?
+
+  users   User[]
+  livros  Livro[]
+  // relacionamentos multi-tenant
+  requisicoes   Requisicao[]
+  pedidos       Pedido[]
+  pedidoItems   PedidoItem[]
+  pagamentos    Pagamento[]
+  comentarios   ComentarioLivro[]
+  atividades    Atividade[]
+  eventos       Evento[]
+
+  @@index([nome])
+}
+
+model User {
+  id           Int     @id @default(autoincrement())
+  name         String
+  email        String  @unique
+  passwordHash String
+  role         Role    @default(PAI)
+  isActive     Boolean @default(true)
+
+  // escopo do bibliotecário
+  biblioteca   Biblioteca? @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int?
+
+  familia Familia?
+
+  mensagensEnviadas  Mensagem[] @relation("MensagensEnviadas")
+  mensagensRecebidas Mensagem[] @relation("MensagensRecebidas")
+
+  notificacoes Notificacao[]
+  atividades   Atividade[]
+
+  consultasAtendidas Consulta[] @relation("ConsultasBibliotecario")
+
+  eventosParticipacoes EventoParticipante[] @relation("UserEventoParticipante")
+
+  ComentarioLivro ComentarioLivro[]
+
+  BloqueioAgenda BloqueioAgenda[]
+  HorarioSemanal HorarioSemanal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role, isActive])
+  @@index([bibliotecaId])
+}
+
+model Familia {
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int  @unique
+
+  telefone   String
+  morada     String
+  interesses Json
+  filhos     Filho[]
+
+  consultas   Consulta[]
+  requisicoes Requisicao[]
+
+  eventosParticipacoes EventoParticipante[] @relation("FamiliaEventoParticipante")
+
+  Carrinho Carrinho?
+  Pedido   Pedido[]
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Filho {
+  id           Int     @id @default(autoincrement())
+  familia      Familia @relation(fields: [familiaId], references: [id])
+  familiaId    Int
+  nome         String
+  idade        Int
+  genero       String
+  perfilLeitor String
+
+  @@index([familiaId])
+}
+
+/* ============================ Conteúdo ============================ */
+
+model Livro {
+  id            Int           @id @default(autoincrement())
+  imagem        String?
+  titulo        String
+  autor         String
+  faixaEtaria   String        @default("Indefinida")
+  categoria     String        @default("Geral")
+  preco         Float?
+  descricao     String?
+  quantidade    Int           @default(0)
+  tipoAquisicao TipoAquisicao @default(emprestimo)
+
+  diasDevolucao Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  requisicoes     Requisicao[]
+  ComentarioLivro ComentarioLivro[]
+  CarrinhoItem    CarrinhoItem[]
+  PedidoItem      PedidoItem[]
+
+  @@index([bibliotecaId, categoria])
+  @@index([titulo])
+  @@index([autor])
+}
+
+/* ============================ Fluxos de atendimento ============================ */
+enum Metodo {
+  PRESENCIAL
+  VIDEO
+}
+model Consulta {
+  id                 Int            @id @default(autoincrement())
+  familia            Familia        @relation(fields: [familiaId], references: [id])
+  familiaId          Int
+  bibliotecario      User           @relation("ConsultasBibliotecario", fields: [bibliotecarioId], references: [id])
+  bibliotecarioId    Int
+  dataHora           DateTime
+  status             ConsultaStatus @default(MARCADA)
+  recusaMotivo       String?
+  retornoMotivo      String?
+  resultadoResumo    String?
+  resultadoEnviadoAt DateTime?
+  notas              String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  metodo           Metodo?          
+ 
+  @@index([bibliotecarioId, status, dataHora])
+  @@index([familiaId, status, dataHora])
+  @@unique([bibliotecarioId, dataHora]) // evita dupla marcação exata
+}
+
+
+/* ============================ Requisições (empréstimo/compra) ============================ */
+
+model Requisicao {
+  id        Int              @id @default(autoincrement())
+
+  // multi-tenant
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  familia   Familia          @relation(fields: [familiaId], references: [id])
+  familiaId Int
+  livro     Livro            @relation(fields: [livroId], references: [id])
+  livroId   Int
+
+  status    RequisicaoStatus @default(PENDENTE)
+
+  entregaTipo     EntregaTipo?
+  entregaData     DateTime?
+  entregaEndereco String?
+
+  motivoRecusa    String?
+
+  despachadoEm    DateTime?
+  entregueEm      DateTime?
+  devolvidoEm     DateTime?
+
+  pagamentoStatus   PagamentoStatus?
+  pagamentoValor    Float?
+  pagamentoUltimos4 String?
+
+  dataDevolucaoPrevista DateTime?
+  diasDevolucao        Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bibliotecaId, status, createdAt])
+  @@index([familiaId, createdAt])
+  @@index([livroId, createdAt])
+}
+
+/* ============================ Interação/Conteúdo ============================ */
+
+model ComentarioLivro {
+  id        Int      @id @default(autoincrement())
+
+  // multi-tenant (para filtrar por biblioteca sem join caro)
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  livro     Livro    @relation(fields: [livroId], references: [id])
+  livroId   Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  rating    Int
+  texto     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([bibliotecaId, livroId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Mensagem {
+  id         Int       @id @default(autoincrement())
+  from       User      @relation("MensagensEnviadas", fields: [fromUserId], references: [id])
+  fromUserId Int
+  to         User      @relation("MensagensRecebidas", fields: [toUserId], references: [id])
+  toUserId   Int
+  body       String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([fromUserId, toUserId, createdAt])
+}
+
+model HorarioSemanal {
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  weekday  Int
+  startMin Int
+  endMin   Int
+  slotMin  Int     @default(30)
+  active   Boolean @default(true)
+
+  @@index([userId, weekday])
+}
+
+model BloqueioAgenda {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  inicio    DateTime
+  fim       DateTime
+  motivo    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, inicio, fim])
+}
+
+model Notificacao {
+  id        Int       @id @default(autoincrement())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/* ============================ Auditoria / Atividade ============================ */
+
+model Atividade {
+  id        Int      @id @default(autoincrement())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    Int?
+
+  // multi-tenant opcional (auditoria global também é possível)
+  biblioteca   Biblioteca? @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int?
+
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([bibliotecaId, createdAt])
+  @@index([userId, createdAt])
+}
+
+/* ============================ Eventos ============================ */
+
+model Evento {
+  id            Int       @id @default(autoincrement())
+  // mapeia a FK para a coluna real `biblioteca_id` (na BD é NULL, por isso deixa opcional aqui)
+  bibliotecaId  Int?      @map("biblioteca_id")
+  biblioteca    Biblioteca? @relation(fields: [bibliotecaId], references: [id])
+
+  titulo        String
+  descricao     String
+  data          DateTime
+  horario       String
+  local         String
+  vagas         Int
+  imagem        String?
+  status        String    @default("agendada")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  participantes EventoParticipante[]
+
+  @@index([bibliotecaId, data, status])
+  // mapeia o nome da tabela real (minúsculas) `evento`
+  @@map("evento")
+}
+
+
+model EventoParticipante {
+  id Int @id @default(autoincrement())
+
+  evento      Evento   @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  eventoId    Int
+
+  familia     Familia? @relation("FamiliaEventoParticipante", fields: [familiaId], references: [id], onDelete: SetNull)
+  familiaId   Int?
+
+  utilizador  User?    @relation("UserEventoParticipante", fields: [utilizadorId], references: [id], onDelete: SetNull)
+  utilizadorId Int?
+
+  qtdAdultos Int    @default(0)
+  qtdFilhos  Int    @default(0)
+  modo       String @default("individual")
+
+  presente  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([eventoId, familiaId])
+  @@unique([eventoId, utilizadorId])
+  @@index([eventoId, presente])
+}
+
+/* ============================ Carrinho / Checkout ============================ */
+/* (mantido como está; carrinho por família “global”. Se precisares por biblioteca,
+   convertemos para chave composta [familiaId, bibliotecaId].) */
+
+model Carrinho {
+  familia     Familia        @relation(fields: [familiaId], references: [id])
+  familiaId   Int            @id
+  itens       CarrinhoItem[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model CarrinhoItem {
+  id         Int      @id @default(autoincrement())
+
+  carrinho   Carrinho @relation(fields: [carrinhoId], references: [familiaId])
+  carrinhoId Int
+
+  livro      Livro    @relation(fields: [livroId], references: [id])
+  livroId    Int
+
+  quantidade Int      @default(1)
+
+  precoUnit      Float  @default(0)
+  tituloSnapshot String
+
+  @@unique([carrinhoId, livroId])
+  @@index([carrinhoId])
+}
+
+/* ============================ Pedido / Pagamento ============================ */
+
+model Pedido {
+  id              Int           @id @default(autoincrement())
+
+  // multi-tenant
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  familia         Familia       @relation(fields: [familiaId], references: [id])
+  familiaId       Int
+  itens           PedidoItem[]
+  total           Float         @default(0)
+  status          PedidoStatus  @default(PAGAMENTO_PENDENTE)
+
+  entregaTipo     EntregaTipo?
+  entregaEndereco String?
+
+  pagamentos      Pagamento[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([bibliotecaId, status, createdAt])
+  @@index([familiaId, createdAt])
+}
+
+model PedidoItem {
+  id         Int     @id @default(autoincrement())
+
+  // multi-tenant (desnormalizado para facilitar filtro por biblioteca)
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  pedido     Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pedidoId   Int
+
+  livro      Livro   @relation(fields: [livroId], references: [id])
+  livroId    Int
+
+  titulo     String
+  precoUnit  Float   @default(0)
+  quantidade Int     @default(1)
+
+  entregaStatus EntregaStatusItem @default(em_transito)
+  entregueEm    DateTime?
+  canceladoEm   DateTime?
+
+  @@index([bibliotecaId, pedidoId])
+  @@index([pedidoId])
+  @@index([livroId])
+}
+
+model Pagamento {
+  id         Int             @id @default(autoincrement())
+
+  // multi-tenant
+  biblioteca   Biblioteca @relation(fields: [bibliotecaId], references: [id])
+  bibliotecaId Int
+
+  pedido     Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pedidoId   Int
+  metodo     PagamentoMetodo
+  referencia String
+  valor      Float           @default(0)
+  status     PagamentoEstado @default(PROCESSANDO)
+  createdAt  DateTime        @default(now())
+
+  @@index([bibliotecaId, status, createdAt])
+  @@index([pedidoId, status])
+}
+
+/* ============================ Recomendação ============================ */
+
+model Recomendacao {
+  id        Int      @id @default(autoincrement())
+  titulo    String
+  autor     String
+  idadeMin  Int?
+  idadeMax  Int?
+  tags      Json
+  motivo    String?
+  createdAt DateTime @default(now())
+}

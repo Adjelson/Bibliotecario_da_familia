@@ -1,0 +1,321 @@
+
+// server/src/routes/auth.ts
+import { Router } from 'express'
+import { prisma } from '../prisma'
+import { z } from 'zod'
+import bcrypt from 'bcryptjs'
+import { signAccess, signRefresh, verifyRefresh } from '../utils/jwt'
+import { ENV } from '../env'
+import { Role, Prisma } from '@prisma/client'
+import { auth } from '../middleware/auth'
+
+const router = Router()
+
+/* =======================================================================
+   Cookies (refresh token)
+   - SameSite validado e coerência com Secure (None exige Secure)
+======================================================================= */
+type SameSiteOpt = 'lax' | 'strict' | 'none'
+const envSameSiteRaw = String(ENV.COOKIE_SAMESITE ?? 'lax').toLowerCase()
+const COOKIE_SAMESITE: SameSiteOpt =
+  envSameSiteRaw === 'none' ? 'none' : envSameSiteRaw === 'strict' ? 'strict' : 'lax'
+
+// Se SameSite=None, secure tem de ser true. Senão, segue ENV ou NODE_ENV.
+const COOKIE_SECURE =
+  COOKIE_SAMESITE === 'none'
+    ? true
+    : ENV.COOKIE_SECURE === true ||
+      String(process.env.NODE_ENV).toLowerCase() === 'production'
+
+function setRefreshCookie(res: any, token: string) {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    sameSite: COOKIE_SAMESITE,
+    secure: COOKIE_SECURE,
+    path: '/auth/refresh',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+  })
+}
+
+/* =======================================================================
+   Segurança mínima no /auth/refresh (mitigar CSRF)
+   - Se definires ENV.FRONTEND_ORIGIN, valida Origin/Referer.
+   - Se não estiver definido, não bloqueia (comportamento antigo).
+======================================================================= */
+function originAllowed(req: any): boolean {
+  const front = (ENV as any)?.FRONTEND_ORIGIN ? String((ENV as any).FRONTEND_ORIGIN) : ''
+  if (!front) return true // sem origem configurada -> não valida
+  const origin = String(req.headers.origin ?? '')
+  const referer = String(req.headers.referer ?? '')
+  const ok = (v: string) => v.startsWith(front)
+  if (origin && !ok(origin)) return false
+  if (referer && !ok(referer)) return false
+  return true
+}
+
+/* =======================================================================
+   Zod Schemas
+======================================================================= */
+const FilhoSchema = z.object({
+  nome: z.string().trim().min(1, 'nome obrigatório'),
+  idade: z.coerce.number().min(0).max(18),
+  genero: z.enum(['F', 'M', 'Outro']),
+  // Mantido conforme usaste noutros ficheiros para não quebrar o Prisma
+  perfilLeitor: z.enum(['iniciante', 'Dislexia', 'autonomo']),
+})
+
+const RegisterBody = z.object({
+  name: z.string().trim().min(2, 'Nome muito curto'),
+  email: z.string().email('Email inválido').transform((e) => e.trim().toLowerCase()),
+  password: z.string().min(6, 'Password muito curta'),
+
+  telefone: z.string().trim().min(3, 'Telefone obrigatório'),
+  morada: z.string().trim().min(3, 'Morada obrigatória'),
+  interesses: z.array(z.string()).default([]),
+
+  filhos: z.array(FilhoSchema).default([]),
+
+  bibliotecaId: z.coerce.number().int().positive().optional(),
+})
+
+const LoginBody = z.object({
+  email: z.string().email().transform((e) => e.trim().toLowerCase()),
+  password: z.string().min(1),
+})
+
+/* =======================================================================
+   Helpers
+======================================================================= */
+function slimUser(u: any) {
+  if (!u) return null
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    bibliotecaId: u.bibliotecaId ?? null,
+  }
+}
+
+/* =======================================================================
+   POST /auth/register
+   - cria user PAI + família + filhos
+   - valida opcionalmente bibliotecaId
+   - emite access e refresh (cookie httpOnly)
+======================================================================= */
+router.post('/register', async (req, res) => {
+  const parsed = RegisterBody.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ message: 'Dados inválidos' })
+  }
+
+  const {
+    name,
+    email,
+    password,
+    telefone,
+    morada,
+    interesses,
+    filhos,
+    bibliotecaId,
+  } = parsed.data
+
+  try {
+    // valida bibliotecaId se vier
+    if (bibliotecaId) {
+      const bib = await prisma.biblioteca.findUnique({
+        where: { id: bibliotecaId },
+        select: { id: true },
+      })
+      if (!bib) return res.status(400).json({ message: 'Biblioteca inválida' })
+    }
+
+    const hash = await bcrypt.hash(password.trim(), 10)
+
+    const created = await prisma.$transaction(async (tx) => {
+      // 1) user (PAI)
+      const user = await tx.user.create({
+        data: {
+          name: name.trim(),
+          email,
+          passwordHash: hash,
+          role: Role.PAI,
+          isActive: true,
+          bibliotecaId: bibliotecaId ?? null,
+        },
+      })
+
+      // 2) família
+      const familia = await tx.familia.create({
+        data: {
+          userId: user.id,
+          telefone: telefone.trim(),
+          morada: morada.trim(),
+          interesses: interesses ?? [],
+        },
+      })
+
+      // 3) filhos
+      if (filhos?.length) {
+        await tx.filho.createMany({
+          data: filhos.map((f) => ({
+            familiaId: familia.id,
+            nome: f.nome.trim(),
+            idade: f.idade,
+            genero: f.genero,
+            perfilLeitor: f.perfilLeitor,
+          })),
+        })
+      }
+
+      return user
+    })
+
+    const accessToken = signAccess({ sub: String(created.id), role: created.role })
+    const refreshToken = signRefresh({ sub: String(created.id), role: created.role })
+    setRefreshCookie(res, refreshToken)
+
+    return res.status(201).json({
+      user: slimUser(created),
+      accessToken,
+      refreshToken, // podes omitir se preferires só via cookie
+    })
+  } catch (err: any) {
+    // conflito unique (email)
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return res.status(409).json({ message: 'Email já registado' })
+    }
+    console.error('Erro /auth/register', err)
+    return res.status(500).json({ message: 'Erro ao registar' })
+  }
+})
+
+/* =======================================================================
+   POST /auth/login
+======================================================================= */
+router.post('/login', async (req, res) => {
+  const parsed = LoginBody.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ message: 'Dados inválidos' })
+  }
+
+  const { email, password } = parsed.data
+
+  const user = await prisma.user.findUnique({ where: { email } })
+  if (!user || !user.isActive) {
+    return res.status(401).json({ message: 'Credenciais inválidas' })
+  }
+
+  const ok = await bcrypt.compare(password, user.passwordHash)
+  if (!ok) {
+    return res.status(401).json({ message: 'Credenciais inválidas' })
+  }
+
+  const accessToken = signAccess({ sub: String(user.id), role: user.role })
+  const refreshToken = signRefresh({ sub: String(user.id), role: user.role })
+  setRefreshCookie(res, refreshToken)
+
+  return res.json({
+    user: slimUser(user),
+    accessToken,
+    refreshToken, // opcional
+  })
+})
+
+/* =======================================================================
+   POST /auth/refresh
+   - valida origem (se FRONTEND_ORIGIN definido)
+   - verifica refresh do cookie
+   - rota o refresh token
+======================================================================= */
+router.post('/refresh', async (req, res) => {
+  if (!originAllowed(req)) {
+    return res.status(403).json({ message: 'Origem inválida' })
+  }
+
+  const token = req.cookies?.refreshToken
+  if (!token) {
+    return res.status(401).json({ message: 'Sem refresh token' })
+  }
+
+  try {
+    const decoded = verifyRefresh<{ sub?: string; role?: Role }>(token)
+    const userId = decoded.sub ? Number(decoded.sub) : undefined
+    if (!userId) throw new Error('invalid')
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: 'Utilizador inválido' })
+    }
+
+    // rotação
+    const accessToken = signAccess({ sub: String(user.id), role: user.role })
+    const newRefresh = signRefresh({ sub: String(user.id), role: user.role })
+    setRefreshCookie(res, newRefresh)
+
+    return res.json({
+      user: slimUser(user),
+      accessToken,
+      refreshToken: newRefresh, // opcional
+    })
+  } catch {
+    return res.status(401).json({ message: 'Refresh token inválido' })
+  }
+})
+
+/* =======================================================================
+   GET /auth/me
+   - requer auth
+   - devolve shape esperado no front
+======================================================================= */
+router.get('/me', auth(true), async (req, res) => {
+  if (!req.auth) {
+    return res.status(401).json({ message: 'Não autenticado' })
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth.userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+      bibliotecaId: true,
+      familia: {
+        select: {
+          id: true,
+          telefone: true,
+          morada: true,
+          interesses: true,
+        },
+      },
+    },
+  })
+
+  if (!user) {
+    return res.status(404).json({ message: 'Utilizador não encontrado' })
+  }
+
+  return res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    isActive: user.isActive,
+    active: user.isActive, // alias mantido
+    bibliotecaId: user.bibliotecaId,
+    familia: user.familia ?? null,
+  })
+})
+
+/* =======================================================================
+   POST /auth/logout
+   - apaga cookie httpOnly
+======================================================================= */
+router.post('/logout', (_req, res) => {
+  res.clearCookie('refreshToken', { path: '/auth/refresh' })
+  res.status(200).json({ ok: true })
+})
+
+export default router
