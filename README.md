@@ -2,8 +2,7 @@
 
 > Plataforma digital desenvolvida como projeto de conclusão de curso para apoiar a promoção da leitura infantil em São Tomé e Príncipe.
 
-![Ecrã de login do sistema](./images/01-login-familia.png)
-
+![Ecrã de login do sistema](./imagemreadme/loginfamilia.png)
 **Figura 1 — Ecrã de autenticação da plataforma.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
@@ -92,70 +91,70 @@ A plataforma está dividida em duas camadas principais:
 
 ### 1. Login
 
-![Login da plataforma](./images/01-login-familia.png)
+![Login da plataforma](./imagemreadme/01-login-familia.png)
 
 **Figura 2 — Página de login da plataforma.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 2. Registo de utilizador
 
-![Registo da família](./images/02-registar-familia.png)
+![Registo da família](./imagemreadme/02-registar-familia.png)
 
 **Figura 3 — Interface de criação de conta para acesso ao sistema.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 3. Dashboard da família
 
-![Dashboard da família](./images/03-dashboard-familia.png)
+![Dashboard da família](./imagemreadme/03-dashboard-familia.png)
 
 **Figura 4 — Painel principal da família com acesso rápido a livros, consultas, mensagens, pedidos e guia de leitura.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 4. Livros e requisições
 
-![Área de livros e requisições](./images/04-livros-requisicoes-familia.png)
+![Área de livros e requisições](./imagemreadme/04-livros-requisicoes-familia.png)
 
 **Figura 5 — Área de consulta e requisição de livros para utilização familiar.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 5. Carrinho / pedidos
 
-![Carrinho da família](./images/05-carrinho-familia.png)
+![Carrinho da família](./imagemreadme/05-carrinho-familia.png)
 
 **Figura 6 — Fluxo de carrinho e pedidos associado à experiência do utilizador.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 6. Notificações
 
-![Notificações da família](./images/06-notificacoes-familia.png)
+![Notificações da família](./imagemreadme/06-notificacoes-familia.png)
 
 **Figura 7 — Área de notificações para acompanhamento de ações e eventos do sistema.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 7. Histórico de consultas
 
-![Histórico de consultas](./images/07-dashboard-admin.png)
+![Histórico de consultas](./imagemreadme/dashboard.png)
 
 **Figura 8 — Ecrã de histórico de consultas realizadas pela família.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 8. Formulário de marcação de consulta
 
-![Formulário de marcação de consulta](./images/08-utilizadores-admin.png)
+![Formulário de marcação de consulta](./imagemreadme/08-utilizadores-admin.png)
 
 **Figura 9 — Interface de submissão de pedido de consulta com bibliotecário.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 9. Gestão de livros
 
-![Gestão de livros](./images/09-livros-admin.png)
+![Gestão de livros](./imagemreadme/livrosrequisicoaesfamilia.png)
 
 **Figura 10 — Vista administrativa orientada à gestão de livros e respetivos dados.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
 
 ### 10. Gestão de bibliotecas
 
-![Gestão de bibliotecas](./images/10-bibliotecas-admin.png)
+![Gestão de bibliotecas](./imagemreadme/livrosrequisicoaesfamilia.png)
 
 **Figura 11 — Interface administrativa para gestão de bibliotecas e configurações associadas.**  
 **Fonte:** Captura de ecrã do sistema Bibliotecário de Família, elaboração própria.
